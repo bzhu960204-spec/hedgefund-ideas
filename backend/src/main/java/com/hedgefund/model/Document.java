@@ -19,7 +19,11 @@ public class Document {
 
     private String source; // Fund name, e.g. "Oakmark Fund"
 
-    private String period; // e.g. "2026Q1"
+    private String period; // legacy string, kept for backward compat
+
+    private Integer periodYear; // e.g. 2025
+
+    private Integer periodQuarter; // 1-4
 
     @Column(nullable = false)
     private String filePath;
@@ -54,6 +58,12 @@ public class Document {
 
     public String getPeriod() { return period; }
     public void setPeriod(String period) { this.period = period; }
+
+    public Integer getPeriodYear() { return periodYear; }
+    public void setPeriodYear(Integer periodYear) { this.periodYear = periodYear; }
+
+    public Integer getPeriodQuarter() { return periodQuarter; }
+    public void setPeriodQuarter(Integer periodQuarter) { this.periodQuarter = periodQuarter; }
 
     public String getFilePath() { return filePath; }
     public void setFilePath(String filePath) { this.filePath = filePath; }

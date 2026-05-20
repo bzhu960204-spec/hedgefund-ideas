@@ -5,6 +5,8 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: '📊' },
   { to: '/documents', label: 'Documents', icon: '📄' },
   { to: '/ideas', label: 'Ideas', icon: '💡' },
+  { to: '/categories', label: 'Categories', icon: '🗂️' },
+  { to: '/companies', label: 'Companies', icon: '🏢' },
 ]
 
 export default function Layout() {

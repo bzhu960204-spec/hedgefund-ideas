@@ -23,7 +23,7 @@ public class DocumentService {
         this.fileStorageConfig = fileStorageConfig;
     }
 
-    public Document uploadDocument(MultipartFile file, String title, String source, String period, String notes) throws IOException {
+    public Document uploadDocument(MultipartFile file, String title, String source, Integer periodYear, Integer periodQuarter, String notes) throws IOException {
         String originalFilename = file.getOriginalFilename();
         String storedFilename = UUID.randomUUID() + "_" + originalFilename;
         Path targetPath = fileStorageConfig.getUploadPath().resolve(storedFilename);
@@ -32,7 +32,8 @@ public class DocumentService {
         Document document = new Document();
         document.setTitle(title != null ? title : originalFilename);
         document.setSource(source);
-        document.setPeriod(period);
+        document.setPeriodYear(periodYear);
+        document.setPeriodQuarter(periodQuarter);
         document.setFileName(originalFilename);
         document.setFilePath(storedFilename);
         document.setFileSize(file.getSize());
@@ -59,11 +60,12 @@ public class DocumentService {
         return fileStorageConfig.getUploadPath().resolve(document.getFilePath());
     }
 
-    public Document updateDocument(Long id, String title, String source, String period, String notes) {
+    public Document updateDocument(Long id, String title, String source, Integer periodYear, Integer periodQuarter, String notes) {
         Document document = getDocument(id);
         if (title != null) document.setTitle(title);
         if (source != null) document.setSource(source);
-        if (period != null) document.setPeriod(period);
+        if (periodYear != null) document.setPeriodYear(periodYear);
+        if (periodQuarter != null) document.setPeriodQuarter(periodQuarter);
         if (notes != null) document.setNotes(notes);
         return documentRepository.save(document);
     }

@@ -9,6 +9,8 @@ export interface Document {
   title: string
   source: string | null
   period: string | null
+  periodYear: number | null
+  periodQuarter: number | null
   filePath: string
   fileName: string
   fileSize: number
@@ -31,11 +33,13 @@ export interface Idea {
   companyId: number
   companyName: string
   companyTicker: string | null
-  action: 'BUY' | 'SELL' | 'HOLD' | 'LONG' | 'SHORT' | 'MONITOR'
+  action: 'BUY' | 'SELL' | 'HOLD' | 'MONITOR' | 'NONE'
   summary: string | null
   thesis: string | null
   confidence: string | null
   createdAt: string
+  periodYear: number | null
+  periodQuarter: number | null
 }
 
 export interface DashboardStats {
@@ -97,6 +101,36 @@ export const ideasApi = {
     api.delete(`/ideas/${id}`),
   importJson: (documentId: number, items: IdeaImportItem[]) =>
     api.post<Idea[]>('/ideas/import', items, { params: { documentId } }),
+}
+
+// Categories API
+export interface Category {
+  id: number
+  name: string
+  description: string | null
+  ideaCount: number
+  createdAt: string
+}
+
+export const categoriesApi = {
+  getAll: () =>
+    api.get<Category[]>('/categories'),
+  getByIdeaId: (ideaId: number) =>
+    api.get<Category[]>(`/categories/by-idea/${ideaId}`),
+  getById: (id: number) =>
+    api.get<Category>(`/categories/${id}`),
+  getIdeas: (id: number) =>
+    api.get<Idea[]>(`/categories/${id}/ideas`),
+  create: (data: { name: string; description?: string }) =>
+    api.post<Category>('/categories', data),
+  update: (id: number, data: { name?: string; description?: string }) =>
+    api.put<Category>(`/categories/${id}`, data),
+  delete: (id: number) =>
+    api.delete(`/categories/${id}`),
+  addIdeas: (id: number, ideaIds: number[]) =>
+    api.post<Category>(`/categories/${id}/ideas`, { ideaIds }),
+  removeIdea: (categoryId: number, ideaId: number) =>
+    api.delete<Category>(`/categories/${categoryId}/ideas/${ideaId}`),
 }
 
 // Dashboard API

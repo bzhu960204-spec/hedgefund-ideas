@@ -31,9 +31,10 @@ public class DocumentController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "source", required = false) String source,
-            @RequestParam(value = "period", required = false) String period,
+            @RequestParam(value = "periodYear", required = false) Integer periodYear,
+            @RequestParam(value = "periodQuarter", required = false) Integer periodQuarter,
             @RequestParam(value = "notes", required = false) String notes) throws IOException {
-        Document document = documentService.uploadDocument(file, title, source, period, notes);
+        Document document = documentService.uploadDocument(file, title, source, periodYear, periodQuarter, notes);
         return ResponseEntity.ok(document);
     }
 
@@ -56,6 +57,7 @@ public class DocumentController {
 
     @GetMapping("/{id}/file")
     public ResponseEntity<Resource> getDocumentFile(@PathVariable Long id) throws IOException {
+        Document document = documentService.getDocument(id);
         Path filePath = documentService.getDocumentFile(id);
         Resource resource = new UrlResource(filePath.toUri());
 
@@ -63,9 +65,11 @@ public class DocumentController {
             return ResponseEntity.notFound().build();
         }
 
+        String fileName = document.getFileName() != null ? document.getFileName() : "document.pdf";
+
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
                 .body(resource);
     }
 
@@ -73,8 +77,12 @@ public class DocumentController {
     public ResponseEntity<Document> updateDocument(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {
+        Integer periodYear = body.get("periodYear") != null && !body.get("periodYear").isEmpty()
+                ? Integer.valueOf(body.get("periodYear")) : null;
+        Integer periodQuarter = body.get("periodQuarter") != null && !body.get("periodQuarter").isEmpty()
+                ? Integer.valueOf(body.get("periodQuarter")) : null;
         Document document = documentService.updateDocument(id,
-                body.get("title"), body.get("source"), body.get("period"), body.get("notes"));
+                body.get("title"), body.get("source"), periodYear, periodQuarter, body.get("notes"));
         return ResponseEntity.ok(document);
     }
 

@@ -20,7 +20,7 @@ public class Idea {
     private Company company;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "VARCHAR(20)")
     private Action action;
 
     @Column(length = 2000)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ideasApi } from '../lib/api'
-import type { Idea } from '../lib/api'
+import { ideasApi, categoriesApi } from '../lib/api'
+import type { Idea, Category } from '../lib/api'
 
 function ActionBadge({ action }: { action: string }) {
   return <span className={`badge badge-${action.toLowerCase()}`}>{action}</span>
@@ -16,7 +16,7 @@ function ConfidenceDot({ level }: { level: string | null }) {
   </span>
 }
 
-type FilterAction = '' | 'BUY' | 'SELL' | 'HOLD' | 'LONG' | 'SHORT' | 'MONITOR'
+type FilterAction = '' | 'BUY' | 'SELL' | 'HOLD' | 'MONITOR' | 'NONE'
 type SortKey = 'newest' | 'oldest' | 'company' | 'action'
 
 export default function Ideas() {
@@ -24,9 +24,10 @@ export default function Ideas() {
   const [search, setSearch] = useState('')
   const [filterAction, setFilterAction] = useState<FilterAction>('')
   const [filterConfidence, setFilterConfidence] = useState('')
+  const [filterYear, setFilterYear] = useState('')
+  const [filterQuarter, setFilterQuarter] = useState('')
   const [sortBy, setSortBy] = useState<SortKey>('newest')
 
-  // Detail panel
   const [selected, setSelected] = useState<Idea | null>(null)
   const [editing, setEditing] = useState(false)
   const [editAction, setEditAction] = useState('')
@@ -34,39 +35,46 @@ export default function Ideas() {
   const [editThesis, setEditThesis] = useState('')
   const [editConfidence, setEditConfidence] = useState('')
 
+  const [showCatPicker, setShowCatPicker] = useState(false)
+  const [categories, setCategories] = useState<Category[]>([])
+  const [catSearch, setCatSearch] = useState('')
+  const [catChecked, setCatChecked] = useState<Set<number>>(new Set())
+  const [catOriginal, setCatOriginal] = useState<Set<number>>(new Set())
+  const [catSaving, setCatSaving] = useState(false)
+
   useEffect(() => {
     ideasApi.getAll().then(res => setIdeas(res.data))
   }, [])
 
-  // Keep panel in sync if ideas list refreshes
-  useEffect(() => {
-    if (selected) setSelected(ideas.find(i => i.id === selected.id) ?? null)
-  }, [ideas])
-
-  const openPanel = (idea: Idea) => {
+  const openModal = (idea: Idea) => {
     setSelected(idea)
     setEditing(false)
   }
 
-  const closePanel = () => {
+  const closeModal = () => {
     setSelected(null)
     setEditing(false)
   }
 
-  const startEdit = () => {
-    if (!selected) return
-    setEditAction(selected.action)
-    setEditSummary(selected.summary || '')
-    setEditThesis(selected.thesis || '')
-    setEditConfidence(selected.confidence || '')
+  const startEdit = (idea: Idea) => {
+    setEditAction(idea.action)
+    setEditSummary(idea.summary || '')
+    setEditThesis(idea.thesis || '')
+    setEditConfidence(idea.confidence || 'MEDIUM')
     setEditing(true)
   }
 
   const handleUpdate = async () => {
     if (!selected) return
-    await ideasApi.update(selected.id, { action: editAction, summary: editSummary || undefined, thesis: editThesis || undefined, confidence: editConfidence || undefined } as any)
-    const res = await ideasApi.getAll()
-    setIdeas(res.data)
+    const res = await ideasApi.update(selected.id, {
+      action: editAction as any,
+      summary: editSummary || undefined,
+      thesis: editThesis || undefined,
+      confidence: editConfidence || undefined,
+    })
+    const updated = res.data
+    setIdeas(prev => prev.map(i => i.id === updated.id ? updated : i))
+    setSelected(updated)
     setEditing(false)
   }
 
@@ -74,13 +82,64 @@ export default function Ideas() {
     if (!confirm('Delete this idea?')) return
     await ideasApi.delete(id)
     setIdeas(prev => prev.filter(i => i.id !== id))
-    if (selected?.id === id) closePanel()
+    if (selected?.id === id) closeModal()
+  }
+
+  const openCatPicker = async () => {
+    if (!selected) return
+    setCatSearch('')
+    setCatSaving(false)
+    const [allRes, myRes] = await Promise.all([
+      categoriesApi.getAll(),
+      categoriesApi.getByIdeaId(selected.id),
+    ])
+    setCategories(allRes.data)
+    const myIds = new Set(myRes.data.map(c => c.id))
+    setCatChecked(new Set(myIds))
+    setCatOriginal(new Set(myIds))
+    setShowCatPicker(true)
+  }
+
+  const toggleCat = (catId: number) => {
+    setCatChecked(prev => {
+      const next = new Set(prev)
+      if (next.has(catId)) next.delete(catId)
+      else next.add(catId)
+      return next
+    })
+  }
+
+  const handleSaveCats = async () => {
+    if (!selected) return
+    setCatSaving(true)
+    const toAdd = [...catChecked].filter(id => !catOriginal.has(id))
+    const toRemove = [...catOriginal].filter(id => !catChecked.has(id))
+    await Promise.all([
+      ...toAdd.map(catId => categoriesApi.addIdeas(catId, [selected.id])),
+      ...toRemove.map(catId => categoriesApi.removeIdea(catId, selected.id)),
+    ])
+    setCatSaving(false)
+    setShowCatPicker(false)
   }
 
   const filtered = ideas
     .filter(i => {
       if (filterAction && i.action !== filterAction) return false
       if (filterConfidence && i.confidence !== filterConfidence) return false
+      if (filterYear || filterQuarter) {
+        const fy = filterYear ? Number(filterYear) : null
+        const fq = filterQuarter ? Number(filterQuarter) : null
+        const iy = i.periodYear ?? 0
+        const iq = i.periodQuarter ?? 0
+        if (fy !== null && fq !== null) {
+          // Show ideas where (year, quarter) >= (fy, fq)
+          if (!(iy > fy || (iy === fy && iq >= fq))) return false
+        } else if (fy !== null) {
+          if (iy < fy) return false
+        } else if (fq !== null) {
+          if (iq < fq) return false
+        }
+      }
       if (search) {
         const q = search.toLowerCase()
         return (
@@ -110,19 +169,30 @@ export default function Ideas() {
     monitor: ideas.filter(i => i.action === 'MONITOR').length,
   }
 
-  return (
-    <div className="ideas-layout">
-      {/* Left: list */}
-      <div className="ideas-list-pane">
-        <div className="page-header">
-          <div>
-            <h1 className="page-title">Ideas</h1>
-            <p className="page-subtitle">{stats.total} ideas — {stats.buy} buy · {stats.sell} sell · {stats.hold} hold · {stats.monitor} monitor</p>
-          </div>
-        </div>
+  // Remove availableYears — no longer needed with free-text year input
 
-        {/* Filters Bar */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+  const selectedIdx = selected ? filtered.findIndex(i => i.id === selected.id) : -1
+  const hasPrev = selectedIdx > 0
+  const hasNext = selectedIdx < filtered.length - 1
+
+  const navigateTo = (idea: Idea) => {
+    setSelected(idea)
+    setEditing(false)
+  }
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Ideas</h1>
+          <p className="page-subtitle">{stats.total} ideas — {stats.buy} buy · {stats.sell} sell · {stats.hold} hold · {stats.monitor} monitor</p>
+        </div>
+      </div>
+
+      {/* Filters Bar */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+        {/* Row 1: search + action + confidence + sort */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
           <div className="input-with-icon" style={{ flex: 1, minWidth: '180px' }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
             <input
@@ -154,147 +224,259 @@ export default function Ideas() {
             <option value="action">Action</option>
           </select>
         </div>
-
-        {filtered.length === 0 ? (
-          <div className="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-            <p>No ideas match your filters</p>
-          </div>
-        ) : (
-          <div className="idea-table">
-            {filtered.map(idea => (
-              <div
-                key={idea.id}
-                className={`idea-row ${selected?.id === idea.id ? 'idea-row-active' : ''}`}
-                onClick={() => openPanel(idea)}
-              >
-                <div className="idea-row-left">
-                  <ActionBadge action={idea.action} />
-                  <div className="idea-row-info">
-                    <div className="idea-row-company">
-                      <span style={{ fontWeight: 600 }}>{idea.companyName}</span>
-                      {idea.companyTicker && <span className="badge-ticker">{idea.companyTicker}</span>}
-                    </div>
-                    {idea.summary && <div className="idea-row-summary">{idea.summary}</div>}
-                  </div>
-                </div>
-                <div className="idea-row-right">
-                  <ConfidenceDot level={idea.confidence} />
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{new Date(idea.createdAt).toLocaleDateString()}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Row 2: period filters */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500 }}>From period:</span>
+          <input
+            className="input"
+            type="number"
+            placeholder="Year (e.g. 2024)"
+            value={filterYear}
+            onChange={e => setFilterYear(e.target.value)}
+            style={{ width: '150px' }}
+            min="2000"
+            max="2099"
+          />
+          <select className="select" style={{ width: 'auto' }} value={filterQuarter} onChange={e => setFilterQuarter(e.target.value)}>
+            <option value="">Any Quarter</option>
+            <option value="1">Q1</option>
+            <option value="2">Q2</option>
+            <option value="3">Q3</option>
+            <option value="4">Q4</option>
+          </select>
+          {(filterYear || filterQuarter) && (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setFilterYear(''); setFilterQuarter('') }}>✕ Clear</button>
+          )}
+        </div>
       </div>
 
-      {/* Right: detail panel */}
+      {/* Ideas Table */}
+      {filtered.length === 0 ? (
+        <div className="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+          <p>No ideas match your filters</p>
+        </div>
+      ) : (
+        <div className="idea-table">
+          {filtered.map(idea => (
+            <div
+              key={idea.id}
+              className="idea-row"
+              onClick={() => openModal(idea)}
+            >
+              <div className="idea-row-left">
+                <ActionBadge action={idea.action} />
+                <div className="idea-row-info">
+                  <div className="idea-row-company">
+                    <span style={{ fontWeight: 600 }}>{idea.companyName}</span>
+                    {idea.companyTicker && <span className="badge-ticker">{idea.companyTicker}</span>}
+                  </div>
+                  {idea.summary && <div className="idea-row-summary">{idea.summary}</div>}
+                </div>
+              </div>
+              <div className="idea-row-right">
+                <ConfidenceDot level={idea.confidence} />
+                {idea.periodYear && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '1px 6px', borderRadius: '4px' }}>
+                    {idea.periodYear} Q{idea.periodQuarter ?? '?'}
+                  </span>
+                )}
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{new Date(idea.createdAt).toLocaleDateString()}</span>
+                <button
+                  className="btn btn-ghost btn-sm btn-danger"
+                  onClick={e => { e.stopPropagation(); handleDelete(idea.id) }}
+                  title="Delete"
+                >🗑️</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Reading / Edit Modal */}
       {selected && (
-        <div className="idea-detail-panel">
-          {/* Panel header */}
-          <div className="idea-detail-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ActionBadge action={selected.action} />
-              {selected.confidence && <ConfidenceDot level={selected.confidence} />}
-            </div>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button className="btn btn-secondary btn-sm" onClick={startEdit}>✏️ Edit</button>
-              <button className="btn-ghost btn-danger" onClick={() => handleDelete(selected.id)} title="Delete">🗑️</button>
-              <button className="btn-ghost" onClick={closePanel} title="Close">✕</button>
-            </div>
-          </div>
+        <div className="modal-overlay" onClick={closeModal}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }} onClick={e => e.stopPropagation()}>
+            {/* Prev */}
+            <button
+              onClick={() => hasPrev && navigateTo(filtered[selectedIdx - 1])}
+              style={{ width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg-secondary)', fontSize: '22px', cursor: hasPrev ? 'pointer' : 'default', opacity: editing ? 0 : (hasPrev ? 1 : 0.25), flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-primary)', pointerEvents: editing ? 'none' : 'auto' }}
+            >‹</button>
 
-          {/* Company */}
-          <div className="idea-detail-company">
-            <div style={{ fontSize: '22px', fontWeight: 700 }}>{selected.companyName}</div>
-            {selected.companyTicker && <span className="badge-ticker" style={{ fontSize: '14px', padding: '3px 10px' }}>{selected.companyTicker}</span>}
-          </div>
-
-          {/* Source document */}
-          <div className="idea-detail-meta">
-            <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>From document</span>
-            <Link to={`/documents/${selected.documentId}`} className="text-link" style={{ fontSize: '13px' }}>
-              📄 {selected.documentTitle}
-            </Link>
-          </div>
-          <div className="idea-detail-meta">
-            <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Recorded</span>
-            <span style={{ fontSize: '13px' }}>{new Date(selected.createdAt).toLocaleString()}</span>
-          </div>
-
-          <div className="idea-detail-divider" />
-
-          {/* Thesis / Summary */}
-          {editing ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div className="form-row form-row-2">
-                <div className="form-group">
-                  <span className="form-label">Action</span>
-                  <select className="select" value={editAction} onChange={e => setEditAction(e.target.value)}>
-                    <option value="BUY">BUY</option>
-                    <option value="SELL">SELL</option>
-                    <option value="HOLD">HOLD</option>
-                    <option value="MONITOR">MONITOR</option>
-                    <option value="NONE">NONE</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <span className="form-label">Confidence</span>
-                  <select className="select" value={editConfidence} onChange={e => setEditConfidence(e.target.value)}>
-                    <option value="">—</option>
-                    <option value="HIGH">HIGH</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="LOW">LOW</option>
-                  </select>
-                </div>
-              </div>
-              <div className="form-group">
-                <span className="form-label">Summary (one-liner)</span>
-                <input
-                  className="input"
-                  value={editSummary}
-                  onChange={e => setEditSummary(e.target.value)}
-                  placeholder="Brief summary..."
-                />
-              </div>
-              <div className="form-group">
-                <span className="form-label">Thesis (full content)</span>
-                <textarea
-                  className="textarea"
-                  value={editThesis}
-                  onChange={e => setEditThesis(e.target.value)}
-                  rows={12}
-                  placeholder="Full investment thesis or original text from document..."
-                  style={{ resize: 'vertical' }}
-                />
-              </div>
-              <div className="modal-actions">
-                <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}>Cancel</button>
-                <button className="btn btn-primary btn-sm" onClick={handleUpdate}>Save</button>
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Summary */}
-              <div>
-                <p style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Summary</p>
-                {selected.summary ? (
-                  <p style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--text-primary)' }}>{selected.summary}</p>
+            {/* Card */}
+            <div className="modal" style={{ maxWidth: 680, width: '70vw', maxHeight: '82vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                {editing ? (
+                  <>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)' }}>Editing idea</span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}>Cancel</button>
+                      <button className="btn btn-primary btn-sm" onClick={handleUpdate}>Save</button>
+                    </div>
+                  </>
                 ) : (
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No summary.</p>
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <ActionBadge action={selected.action} />
+                      {selected.confidence && <ConfidenceDot level={selected.confidence} />}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {selectedIdx >= 0 && (
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{selectedIdx + 1} / {filtered.length}</span>
+                      )}
+                      <button className="btn btn-ghost btn-sm" onClick={() => startEdit(selected)}>✏️ Edit</button>
+                      <button className="btn btn-ghost btn-sm" onClick={openCatPicker} title="Add to category">🗂️</button>
+                      <button className="btn btn-ghost btn-sm btn-danger" onClick={() => handleDelete(selected.id)} title="Delete">🗑️</button>
+                      <button className="btn btn-ghost" onClick={closeModal} style={{ fontSize: '16px', lineHeight: 1 }}>✕</button>
+                    </div>
+                  </>
                 )}
               </div>
-              {/* Thesis */}
-              <div>
-                <p style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Thesis</p>
-                {selected.thesis ? (
-                  <p style={{ fontSize: '14px', lineHeight: '1.8', color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>{selected.thesis}</p>
+
+              {/* Scrollable body */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 24px' }}>
+                {editing ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 700 }}>
+                      {selected.companyName}
+                      {selected.companyTicker && <span style={{ fontSize: '13px', color: 'var(--text-muted)', marginLeft: '8px' }}>({selected.companyTicker})</span>}
+                    </div>
+                    <div className="form-row form-row-2">
+                      <div className="form-group">
+                        <span className="form-label">Action</span>
+                        <select className="select" value={editAction} onChange={e => setEditAction(e.target.value)}>
+                          <option value="BUY">BUY</option>
+                          <option value="SELL">SELL</option>
+                          <option value="HOLD">HOLD</option>
+                          <option value="MONITOR">MONITOR</option>
+                          <option value="NONE">NONE</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <span className="form-label">Confidence</span>
+                        <select className="select" value={editConfidence} onChange={e => setEditConfidence(e.target.value)}>
+                          <option value="">—</option>
+                          <option value="HIGH">HIGH</option>
+                          <option value="MEDIUM">MEDIUM</option>
+                          <option value="LOW">LOW</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <span className="form-label">Summary</span>
+                      <input className="input" value={editSummary} onChange={e => setEditSummary(e.target.value)} placeholder="Brief viewpoint..." />
+                    </div>
+                    <div className="form-group">
+                      <span className="form-label">Thesis</span>
+                      <textarea className="textarea" value={editThesis} onChange={e => setEditThesis(e.target.value)} rows={10} placeholder="Full investment thesis..." style={{ resize: 'vertical', lineHeight: '1.7' }} />
+                    </div>
+                  </div>
                 ) : (
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No thesis recorded yet. Click Edit to add one.</p>
+                  <>
+                    {/* Company + meta */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ fontSize: '22px', fontWeight: 700 }}>{selected.companyName}</div>
+                      {selected.companyTicker && <span className="badge-ticker" style={{ marginTop: '4px', display: 'inline-block' }}>{selected.companyTicker}</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '24px', marginBottom: '20px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                      <div>
+                        From&nbsp;
+                        <Link to={`/documents/${selected.documentId}`} className="text-link" onClick={closeModal}>
+                          📄 {selected.documentTitle}
+                        </Link>
+                      </div>
+                      {selected.periodYear && <div>📅 {selected.periodYear} Q{selected.periodQuarter ?? '?'}</div>}
+                      <div>{new Date(selected.createdAt).toLocaleDateString()}</div>
+                    </div>
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {selected.summary && (
+                        <div>
+                          <p style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Summary</p>
+                          <p style={{ fontSize: '14px', lineHeight: '1.6' }}>{selected.summary}</p>
+                        </div>
+                      )}
+                      {selected.thesis && (
+                        <div>
+                          <p style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Thesis</p>
+                          <p style={{ fontSize: '14px', lineHeight: '1.8', whiteSpace: 'pre-wrap' }}>{selected.thesis}</p>
+                        </div>
+                      )}
+                      {!selected.summary && !selected.thesis && (
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No content recorded yet. Click ✏️ Edit to add.</p>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             </div>
-          )}
+
+            {/* Next */}
+            <button
+              onClick={() => hasNext && navigateTo(filtered[selectedIdx + 1])}
+              style={{ width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--border)', background: 'var(--bg-secondary)', fontSize: '22px', cursor: hasNext ? 'pointer' : 'default', opacity: editing ? 0 : (hasNext ? 1 : 0.25), flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-primary)', pointerEvents: editing ? 'none' : 'auto' }}
+            >›</button>
+          </div>
+        </div>
+      )}
+      {/* Category Picker */}
+      {showCatPicker && selected && (
+        <div className="modal-overlay" onClick={() => setShowCatPicker(false)}>
+          <div className="modal" style={{ maxWidth: 420, width: '90vw' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <h2 className="modal-title">Manage Categories</h2>
+              <button className="btn btn-ghost" onClick={() => setShowCatPicker(false)} style={{ fontSize: '16px' }}>✕</button>
+            </div>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              <strong>{selected.companyName}</strong> — check to include, uncheck to remove
+            </p>
+            <input
+              className="input"
+              placeholder="Search categories..."
+              value={catSearch}
+              onChange={e => setCatSearch(e.target.value)}
+              style={{ marginBottom: '12px' }}
+              autoFocus
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '280px', overflowY: 'auto', marginBottom: '16px' }}>
+              {categories
+                .filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase()))
+                .map(cat => {
+                  const checked = catChecked.has(cat.id)
+                  const wasOriginal = catOriginal.has(cat.id)
+                  const changed = checked !== wasOriginal
+                  return (
+                    <label
+                      key={cat.id}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '6px', cursor: 'pointer', background: checked ? 'var(--bg-tertiary)' : 'transparent', border: `1px solid ${changed ? 'var(--primary)' : 'var(--border)'}`, transition: 'all 0.15s' }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleCat(cat.id)}
+                        style={{ width: 16, height: 16, flexShrink: 0 }}
+                      />
+                      <span style={{ flex: 1, fontSize: '14px' }}>{cat.name}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{cat.ideaCount} ideas</span>
+                      {changed && (
+                        <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 600 }}>
+                          {checked ? '+ Add' : '− Remove'}
+                        </span>
+                      )}
+                    </label>
+                  )
+                })}
+              {categories.filter(c => c.name.toLowerCase().includes(catSearch.toLowerCase())).length === 0 && (
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>No categories found</p>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowCatPicker(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSaveCats} disabled={catSaving}>
+                {catSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
