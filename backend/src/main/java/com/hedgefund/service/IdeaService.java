@@ -1,12 +1,16 @@
 package com.hedgefund.service;
 
 import com.hedgefund.dto.IdeaImportItem;
+import com.hedgefund.exception.BadRequestException;
+import com.hedgefund.exception.ResourceNotFoundException;
 import com.hedgefund.model.Company;
 import com.hedgefund.model.Document;
 import com.hedgefund.model.Idea;
 import com.hedgefund.repository.CompanyRepository;
 import com.hedgefund.repository.DocumentRepository;
 import com.hedgefund.repository.IdeaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,9 +32,9 @@ public class IdeaService {
 
     public Idea createIdea(Long documentId, Long companyId, Idea.Action action, String summary, String thesis, String confidence) {
         Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new RuntimeException("Document not found: " + documentId));
+                .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
         Company company = companyRepository.findById(companyId)
-                .orElseThrow(() -> new RuntimeException("Company not found: " + companyId));
+                .orElseThrow(() -> new ResourceNotFoundException("Company", companyId));
 
         Idea idea = new Idea();
         idea.setDocument(document);
@@ -47,6 +51,16 @@ public class IdeaService {
         return ideaRepository.findAllByOrderByCreatedAtDesc();
     }
 
+    public Page<Idea> getIdeasPaged(Long documentId, Long companyId, Pageable pageable) {
+        if (documentId != null) {
+            return ideaRepository.findByDocumentId(documentId, pageable);
+        }
+        if (companyId != null) {
+            return ideaRepository.findByCompanyId(companyId, pageable);
+        }
+        return ideaRepository.findAll(pageable);
+    }
+
     public List<Idea> getIdeasByDocument(Long documentId) {
         return ideaRepository.findByDocumentId(documentId);
     }
@@ -57,7 +71,7 @@ public class IdeaService {
 
     public Idea updateIdea(Long id, Idea.Action action, String summary, String thesis, String confidence) {
         Idea idea = ideaRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Idea not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Idea", id));
         if (action != null) idea.setAction(action);
         if (summary != null) idea.setSummary(summary);
         if (thesis != null) idea.setThesis(thesis);
@@ -66,6 +80,9 @@ public class IdeaService {
     }
 
     public void deleteIdea(Long id) {
+        if (!ideaRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Idea", id);
+        }
         ideaRepository.deleteById(id);
     }
 
@@ -76,7 +93,7 @@ public class IdeaService {
     @Transactional
     public List<Idea> importIdeas(Long documentId, List<IdeaImportItem> items) {
         Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new RuntimeException("Document not found: " + documentId));
+                .orElseThrow(() -> new ResourceNotFoundException("Document", documentId));
 
         List<Idea> saved = new ArrayList<>();
         for (IdeaImportItem item : items) {
@@ -84,10 +101,17 @@ public class IdeaService {
 
             Company company = resolveCompany(item);
 
+            Idea.Action action;
+            try {
+                action = Idea.Action.valueOf(item.getAction().trim().toUpperCase());
+            } catch (IllegalArgumentException ex) {
+                throw new BadRequestException("Invalid action: " + item.getAction());
+            }
+
             Idea idea = new Idea();
             idea.setDocument(document);
             idea.setCompany(company);
-            idea.setAction(Idea.Action.valueOf(item.getAction().toUpperCase()));
+            idea.setAction(action);
             if (item.getSummary() != null && !item.getSummary().isBlank()) idea.setSummary(item.getSummary());
             if (item.getThesis() != null && !item.getThesis().isBlank()) idea.setThesis(item.getThesis());
             if (item.getConfidence() != null && !item.getConfidence().isBlank()) idea.setConfidence(item.getConfidence().toUpperCase());
@@ -99,7 +123,7 @@ public class IdeaService {
     private Company resolveCompany(IdeaImportItem item) {
         if (item.getCompanyId() != null) {
             return companyRepository.findById(item.getCompanyId())
-                    .orElseThrow(() -> new RuntimeException("Company not found: " + item.getCompanyId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Company", item.getCompanyId()));
         }
         if (item.getCompanyTicker() != null && !item.getCompanyTicker().isBlank()) {
             return companyRepository.findByTickerIgnoreCase(item.getCompanyTicker())
@@ -116,6 +140,7 @@ public class IdeaService {
             c.setName(item.getCompanyName());
             return companyRepository.save(c);
         }
-        throw new RuntimeException("Each idea must provide companyId, companyTicker, or companyName");
+        throw new BadRequestException("Each idea must provide companyId, companyTicker, or companyName");
     }
 }
+

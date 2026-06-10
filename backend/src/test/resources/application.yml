@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=LEGACY;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+  h2:
+    console:
+      enabled: false
+
+app:
+  upload:
+    dir: ./build/test-uploads
+  jwt:
+    secret: test-secret-do-not-use-in-production-must-be-32-bytes-long-xx
+    expiration-ms: 3600000
+  cors:
+    allowed-origins: http://localhost:5173
+  auth:
+    default-admin:
+      username: admin
+      password: admin123

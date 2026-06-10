@@ -16,6 +16,36 @@
 
 浏览器打开 [http://localhost:5173](http://localhost:5173)
 
+> **首次登录**：用户名 `admin`，密码 `admin123`（由后端首次启动时自动创建）。
+> 生产部署前，请通过环境变量 `APP_ADMIN_USERNAME` / `APP_ADMIN_PASSWORD` 覆盖，或登录后通过注册接口创建新账号再禁用默认账号。
+
+---
+
+## 认证 / Authentication
+
+所有 `/api/**` 接口（除 `/api/auth/login` 与 `/api/auth/register`）都需要 JWT。前端已自动处理：
+
+- 登录后 token 存储在 `localStorage`（key: `hf_auth_token`）
+- 每次请求由 axios 拦截器自动附加 `Authorization: Bearer <token>` 头
+- 收到 401 自动清除 token 并跳转登录页
+
+### Auth 接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/login` | `{username, password}` → 返回 `{token, username, role, expiresInMs}` |
+| POST | `/api/auth/register` | 自助注册（创建普通 USER 账号） |
+| GET  | `/api/auth/me` | 返回当前登录用户信息 |
+
+### 环境变量
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `APP_JWT_SECRET` | 内置占位 | JWT 签名密钥，**生产必须覆盖**（≥ 32 字节随机串） |
+| `APP_ADMIN_USERNAME` | `admin` | 首次启动自动创建的管理员用户名 |
+| `APP_ADMIN_PASSWORD` | `admin123` | 首次启动自动创建的管理员密码 |
+| `APP_CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | 允许的前端域名（逗号分隔） |
+
 ---
 
 ## JSON 批量导入观点 (Ideas Import)
@@ -127,7 +157,7 @@ Content-Type: application/json
 失败时返回 HTTP 400：
 
 ```json
-{ "error": "Each idea must provide companyId, companyTicker, or companyName" }
+{ "timestamp": "...", "status": 400, "error": "Bad Request", "message": "Each idea must provide companyId, companyTicker, or companyName", "path": "/api/ideas/import" }
 ```
 
 ---
@@ -151,11 +181,22 @@ Document  ──< Idea >──  Company
 
 | 层 | 技术 |
 |----|------|
-| 后端 | Spring Boot 3.2.5 · Java 17 · Spring Data JPA |
+| 后端 | Spring Boot 3.2.5 · Java 17 · Spring Data JPA · Spring Security · JWT (jjwt) |
 | 数据库 | H2 文件模式（`./data/hedgefund`，持久化） |
 | PDF 存储 | 本地文件系统（`./uploads/`） |
 | 前端 | React 18 · Vite 5 · TypeScript · 纯 CSS 主题 |
 | 主题 | Material Design / Ant Design Pro（侧边栏底部切换） |
+
+---
+
+## 测试
+
+```powershell
+cd backend
+mvn test
+```
+
+覆盖范围：JWT token、用户注册、idea 导入逻辑、auth 接口（含未授权拒绝）、context 加载。
 
 ---
 

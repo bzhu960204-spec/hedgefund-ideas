@@ -1,5 +1,6 @@
 package com.hedgefund.service;
 
+import com.hedgefund.exception.ResourceNotFoundException;
 import com.hedgefund.model.Company;
 import com.hedgefund.repository.CompanyRepository;
 import org.springframework.stereotype.Service;
@@ -25,7 +26,7 @@ public class CompanyService {
 
     public Company getCompany(Long id) {
         return companyRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Company not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Company", id));
     }
 
     public List<Company> searchCompanies(String query) {
@@ -42,6 +43,9 @@ public class CompanyService {
     }
 
     public void deleteCompany(Long id) {
+        if (!companyRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Company", id);
+        }
         companyRepository.deleteById(id);
     }
 

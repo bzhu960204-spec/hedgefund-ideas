@@ -4,6 +4,60 @@ const api = axios.create({
   baseURL: '/api',
 })
 
+const TOKEN_KEY = 'hf_auth_token'
+const USER_KEY = 'hf_auth_user'
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string | null) {
+  if (token) localStorage.setItem(TOKEN_KEY, token)
+  else localStorage.removeItem(TOKEN_KEY)
+}
+
+export interface AuthUser {
+  username: string
+  role: string
+}
+
+export function getStoredUser(): AuthUser | null {
+  const raw = localStorage.getItem(USER_KEY)
+  if (!raw) return null
+  try { return JSON.parse(raw) as AuthUser } catch { return null }
+}
+
+export function setStoredUser(user: AuthUser | null) {
+  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user))
+  else localStorage.removeItem(USER_KEY)
+}
+
+api.interceptors.request.use(config => {
+  const token = getToken()
+  if (token) {
+    config.headers = config.headers ?? {}
+    ;(config.headers as Record<string, string>).Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+let onUnauthorized: (() => void) | null = null
+export function registerUnauthorizedHandler(handler: () => void) {
+  onUnauthorized = handler
+}
+
+api.interceptors.response.use(
+  resp => resp,
+  err => {
+    if (err?.response?.status === 401) {
+      setToken(null)
+      setStoredUser(null)
+      onUnauthorized?.()
+    }
+    return Promise.reject(err)
+  }
+)
+
 export interface Document {
   id: number
   title: string
@@ -46,6 +100,31 @@ export interface DashboardStats {
   documents: number
   companies: number
   ideas: number
+}
+
+export interface PagedResponse<T> {
+  content: T[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}
+
+// Auth API
+export interface LoginResponse {
+  token: string
+  username: string
+  role: string
+  expiresInMs: number
+}
+
+export const authApi = {
+  login: (username: string, password: string) =>
+    api.post<LoginResponse>('/auth/login', { username, password }),
+  register: (username: string, password: string) =>
+    api.post('/auth/register', { username, password }),
+  me: () =>
+    api.get<AuthUser & { id: number }>('/auth/me'),
 }
 
 // Documents API
@@ -93,7 +172,9 @@ export interface IdeaImportItem {
 export const ideasApi = {
   getAll: (params?: { documentId?: number; companyId?: number }) =>
     api.get<Idea[]>('/ideas', { params }),
-  create: (data: { documentId: number; companyId: number; action: string; summary?: string; confidence?: string }) =>
+  getPaged: (params: { documentId?: number; companyId?: number; page: number; size?: number }) =>
+    api.get<PagedResponse<Idea>>('/ideas', { params }),
+  create: (data: { documentId: number; companyId: number; action: string; summary?: string; thesis?: string; confidence?: string }) =>
     api.post<Idea>('/ideas', data),
   update: (id: number, data: Partial<Idea>) =>
     api.put<Idea>(`/ideas/${id}`, data),

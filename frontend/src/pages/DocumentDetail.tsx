@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { documentsApi, ideasApi, companiesApi, categoriesApi } from '../lib/api'
+import api, { documentsApi, ideasApi, companiesApi, categoriesApi } from '../lib/api'
 import type { Document, Idea, Company, Category } from '../lib/api'
 
 function ActionBadge({ action }: { action: string }) {
@@ -100,6 +100,25 @@ export default function DocumentDetail() {
   const [confidence, setConfidence] = useState('MEDIUM')
 
   const documentId = Number(id)
+
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!id) return
+    let revokeUrl: string | null = null
+    let cancelled = false
+    api.get(`/documents/${documentId}/file`, { responseType: 'blob' })
+      .then(res => {
+        if (cancelled) return
+        const url = URL.createObjectURL(res.data as Blob)
+        revokeUrl = url
+        setPdfUrl(url)
+      })
+      .catch(() => { if (!cancelled) setPdfUrl(null) })
+    return () => {
+      cancelled = true
+      if (revokeUrl) URL.revokeObjectURL(revokeUrl)
+    }
+  }, [id, documentId])
 
   useEffect(() => {
     if (!id) return
@@ -204,7 +223,7 @@ export default function DocumentDetail() {
       setShowImport(false)
       setImportJson('')
     } catch (e: any) {
-      setImportError(e?.response?.data?.error ?? 'Import failed.')
+      setImportError(e?.response?.data?.message ?? e?.response?.data?.error ?? 'Import failed.')
     } finally {
       setImporting(false)
     }
@@ -226,7 +245,7 @@ export default function DocumentDetail() {
             <span>{document.fileName}</span>
           </div>
           <iframe
-            src={documentsApi.getFileUrl(document.id)}
+            src={pdfUrl ?? 'about:blank'}
             className="pdf-frame"
             title="PDF Viewer"
           />

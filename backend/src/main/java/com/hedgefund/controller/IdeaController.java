@@ -1,19 +1,28 @@
 package com.hedgefund.controller;
 
+import com.hedgefund.dto.IdeaCreateRequest;
 import com.hedgefund.dto.IdeaDTO;
 import com.hedgefund.dto.IdeaImportItem;
+import com.hedgefund.dto.IdeaUpdateRequest;
+import com.hedgefund.dto.PagedResponse;
 import com.hedgefund.model.Idea;
 import com.hedgefund.service.IdeaService;
+import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/ideas")
 public class IdeaController {
+
+    private static final int MAX_PAGE_SIZE = 200;
 
     private final IdeaService ideaService;
 
@@ -22,22 +31,37 @@ public class IdeaController {
     }
 
     @PostMapping
-    public ResponseEntity<IdeaDTO> createIdea(@RequestBody Map<String, Object> body) {
-        Long documentId = Long.valueOf(body.get("documentId").toString());
-        Long companyId = Long.valueOf(body.get("companyId").toString());
-        Idea.Action action = Idea.Action.valueOf(body.get("action").toString());
-        String summary = body.get("summary") != null ? body.get("summary").toString() : null;
-        String thesis = body.get("thesis") != null ? body.get("thesis").toString() : null;
-        String confidence = body.get("confidence") != null ? body.get("confidence").toString() : null;
-
-        Idea idea = ideaService.createIdea(documentId, companyId, action, summary, thesis, confidence);
+    public ResponseEntity<IdeaDTO> createIdea(@Valid @RequestBody IdeaCreateRequest request) {
+        Idea idea = ideaService.createIdea(
+                request.getDocumentId(),
+                request.getCompanyId(),
+                request.getAction(),
+                request.getSummary(),
+                request.getThesis(),
+                request.getConfidence()
+        );
         return ResponseEntity.ok(IdeaDTO.from(idea));
     }
 
+    /**
+     * When `page` is provided, returns a paginated response.
+     * Otherwise returns the full list (backward compatible).
+     */
     @GetMapping
-    public ResponseEntity<List<IdeaDTO>> getIdeas(
+    public ResponseEntity<?> getIdeas(
             @RequestParam(value = "documentId", required = false) Long documentId,
-            @RequestParam(value = "companyId", required = false) Long companyId) {
+            @RequestParam(value = "companyId", required = false) Long companyId,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false, defaultValue = "50") Integer size) {
+
+        if (page != null) {
+            int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+            Pageable pageable = PageRequest.of(Math.max(page, 0), safeSize,
+                    Sort.by(Sort.Direction.DESC, "createdAt"));
+            Page<Idea> result = ideaService.getIdeasPaged(documentId, companyId, pageable);
+            return ResponseEntity.ok(PagedResponse.of(result, IdeaDTO::from));
+        }
+
         List<Idea> ideas;
         if (documentId != null) {
             ideas = ideaService.getIdeasByDocument(documentId);
@@ -50,12 +74,13 @@ public class IdeaController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<IdeaDTO> updateIdea(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        Idea.Action action = body.get("action") != null ? Idea.Action.valueOf(body.get("action")) : null;
-        String summary = body.get("summary");
-        String thesis = body.get("thesis");
-        String confidence = body.get("confidence");
-        return ResponseEntity.ok(IdeaDTO.from(ideaService.updateIdea(id, action, summary, thesis, confidence)));
+    public ResponseEntity<IdeaDTO> updateIdea(@PathVariable Long id, @Valid @RequestBody IdeaUpdateRequest request) {
+        Idea updated = ideaService.updateIdea(id,
+                request.getAction(),
+                request.getSummary(),
+                request.getThesis(),
+                request.getConfidence());
+        return ResponseEntity.ok(IdeaDTO.from(updated));
     }
 
     @DeleteMapping("/{id}")
@@ -65,15 +90,12 @@ public class IdeaController {
     }
 
     @PostMapping("/import")
-    public ResponseEntity<?> importIdeas(
+    public ResponseEntity<List<IdeaDTO>> importIdeas(
             @RequestParam("documentId") Long documentId,
             @RequestBody List<IdeaImportItem> items) {
-        try {
-            List<IdeaDTO> result = ideaService.importIdeas(documentId, items)
-                    .stream().map(IdeaDTO::from).collect(Collectors.toList());
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        List<IdeaDTO> result = ideaService.importIdeas(documentId, items)
+                .stream().map(IdeaDTO::from).collect(Collectors.toList());
+        return ResponseEntity.ok(result);
     }
 }
+

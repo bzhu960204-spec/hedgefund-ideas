@@ -1,7 +1,9 @@
 package com.hedgefund.controller;
 
+import com.hedgefund.dto.DocumentUpdateRequest;
 import com.hedgefund.model.Document;
 import com.hedgefund.service.DocumentService;
+import jakarta.validation.Valid;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -76,13 +78,11 @@ public class DocumentController {
     @PutMapping("/{id}")
     public ResponseEntity<Document> updateDocument(
             @PathVariable Long id,
-            @RequestBody Map<String, String> body) {
-        Integer periodYear = body.get("periodYear") != null && !body.get("periodYear").isEmpty()
-                ? Integer.valueOf(body.get("periodYear")) : null;
-        Integer periodQuarter = body.get("periodQuarter") != null && !body.get("periodQuarter").isEmpty()
-                ? Integer.valueOf(body.get("periodQuarter")) : null;
+            @Valid @RequestBody DocumentUpdateRequest request) {
         Document document = documentService.updateDocument(id,
-                body.get("title"), body.get("source"), periodYear, periodQuarter, body.get("notes"));
+                request.getTitle(), request.getSource(),
+                request.getPeriodYear(), request.getPeriodQuarter(),
+                request.getNotes());
         return ResponseEntity.ok(document);
     }
 
@@ -99,3 +99,4 @@ public class DocumentController {
         return ResponseEntity.ok(stats);
     }
 }
+

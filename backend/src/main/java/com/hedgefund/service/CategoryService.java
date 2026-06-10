@@ -1,5 +1,6 @@
 package com.hedgefund.service;
 
+import com.hedgefund.exception.ResourceNotFoundException;
 import com.hedgefund.model.Category;
 import com.hedgefund.model.Idea;
 import com.hedgefund.repository.CategoryRepository;
@@ -30,7 +31,7 @@ public class CategoryService {
 
     public Category getCategory(Long id) {
         return categoryRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Category not found: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Category", id));
     }
 
     public Category createCategory(String name, String description) {
@@ -49,6 +50,9 @@ public class CategoryService {
 
     @Transactional
     public void deleteCategory(Long id) {
+        if (!categoryRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Category", id);
+        }
         categoryRepository.deleteById(id);
     }
 
@@ -56,7 +60,7 @@ public class CategoryService {
     public Category addIdea(Long categoryId, Long ideaId) {
         Category category = getCategory(categoryId);
         Idea idea = ideaRepository.findById(ideaId)
-                .orElseThrow(() -> new RuntimeException("Idea not found: " + ideaId));
+                .orElseThrow(() -> new ResourceNotFoundException("Idea", ideaId));
         category.getIdeas().add(idea);
         return categoryRepository.save(category);
     }

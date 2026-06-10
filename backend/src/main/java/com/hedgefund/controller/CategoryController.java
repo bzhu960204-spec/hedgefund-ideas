@@ -1,14 +1,16 @@
 package com.hedgefund.controller;
 
+import com.hedgefund.dto.CategoryAddIdeasRequest;
 import com.hedgefund.dto.CategoryDTO;
+import com.hedgefund.dto.CategoryRequest;
 import com.hedgefund.dto.IdeaDTO;
 import com.hedgefund.model.Category;
 import com.hedgefund.service.CategoryService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -54,18 +56,15 @@ public class CategoryController {
     }
 
     @PostMapping
-    public ResponseEntity<CategoryDTO> createCategory(@RequestBody Map<String, String> body) {
-        String name = body.get("name");
-        String description = body.get("description");
-        Category category = categoryService.createCategory(name, description);
+    public ResponseEntity<CategoryDTO> createCategory(@Valid @RequestBody CategoryRequest request) {
+        Category category = categoryService.createCategory(request.getName(), request.getDescription());
         return ResponseEntity.ok(CategoryDTO.from(category));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<CategoryDTO> updateCategory(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        String name = body.get("name");
-        String description = body.get("description");
-        return ResponseEntity.ok(CategoryDTO.from(categoryService.updateCategory(id, name, description)));
+    public ResponseEntity<CategoryDTO> updateCategory(@PathVariable Long id, @Valid @RequestBody CategoryRequest request) {
+        return ResponseEntity.ok(CategoryDTO.from(
+                categoryService.updateCategory(id, request.getName(), request.getDescription())));
     }
 
     @DeleteMapping("/{id}")
@@ -75,9 +74,8 @@ public class CategoryController {
     }
 
     @PostMapping("/{id}/ideas")
-    public ResponseEntity<CategoryDTO> addIdeas(@PathVariable Long id, @RequestBody Map<String, List<Long>> body) {
-        List<Long> ideaIds = body.get("ideaIds");
-        return ResponseEntity.ok(CategoryDTO.from(categoryService.addIdeas(id, ideaIds)));
+    public ResponseEntity<CategoryDTO> addIdeas(@PathVariable Long id, @Valid @RequestBody CategoryAddIdeasRequest request) {
+        return ResponseEntity.ok(CategoryDTO.from(categoryService.addIdeas(id, request.getIdeaIds())));
     }
 
     @DeleteMapping("/{id}/ideas/{ideaId}")
@@ -85,3 +83,4 @@ public class CategoryController {
         return ResponseEntity.ok(CategoryDTO.from(categoryService.removeIdea(id, ideaId)));
     }
 }
+

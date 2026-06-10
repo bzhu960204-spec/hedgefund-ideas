@@ -1,6 +1,8 @@
 package com.hedgefund.repository;
 
 import com.hedgefund.model.Idea;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
@@ -11,4 +13,8 @@ public interface IdeaRepository extends JpaRepository<Idea, Long> {
     List<Idea> findAllByOrderByCreatedAtDesc();
     long countByDocumentId(Long documentId);
     long countByCompanyId(Long companyId);
+
+    Page<Idea> findByDocumentId(Long documentId, Pageable pageable);
+    Page<Idea> findByCompanyId(Long companyId, Pageable pageable);
 }
+

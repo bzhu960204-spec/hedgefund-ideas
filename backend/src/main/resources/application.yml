@@ -26,3 +26,15 @@ spring:
 app:
   upload:
     dir: ./uploads
+  jwt:
+    # 32+ byte random secret. Override in production via env var APP_JWT_SECRET.
+    secret: ${APP_JWT_SECRET:change-me-please-use-at-least-32-bytes-of-random-data-base}
+    # Token lifetime in milliseconds (default 24h)
+    expiration-ms: 86400000
+  cors:
+    allowed-origins: http://localhost:5173,http://localhost:3000
+  auth:
+    default-admin:
+      username: ${APP_ADMIN_USERNAME:admin}
+      password: ${APP_ADMIN_PASSWORD:admin123}
+

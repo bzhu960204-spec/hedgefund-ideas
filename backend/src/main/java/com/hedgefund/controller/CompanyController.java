@@ -1,7 +1,9 @@
 package com.hedgefund.controller;
 
+import com.hedgefund.dto.CompanyRequest;
 import com.hedgefund.model.Company;
 import com.hedgefund.service.CompanyService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,8 +20,13 @@ public class CompanyController {
     }
 
     @PostMapping
-    public ResponseEntity<Company> createCompany(@RequestBody Company company) {
-        return ResponseEntity.ok(companyService.createCompany(company));
+    public ResponseEntity<Company> createCompany(@Valid @RequestBody CompanyRequest request) {
+        Company c = new Company();
+        c.setName(request.getName());
+        c.setTicker(request.getTicker());
+        c.setSector(request.getSector());
+        c.setDescription(request.getDescription());
+        return ResponseEntity.ok(companyService.createCompany(c));
     }
 
     @GetMapping
@@ -40,8 +47,13 @@ public class CompanyController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Company> updateCompany(@PathVariable Long id, @RequestBody Company company) {
-        return ResponseEntity.ok(companyService.updateCompany(id, company));
+    public ResponseEntity<Company> updateCompany(@PathVariable Long id, @Valid @RequestBody CompanyRequest request) {
+        Company c = new Company();
+        c.setName(request.getName());
+        c.setTicker(request.getTicker());
+        c.setSector(request.getSector());
+        c.setDescription(request.getDescription());
+        return ResponseEntity.ok(companyService.updateCompany(id, c));
     }
 
     @DeleteMapping("/{id}")
@@ -50,3 +62,4 @@ public class CompanyController {
         return ResponseEntity.noContent().build();
     }
 }
+
